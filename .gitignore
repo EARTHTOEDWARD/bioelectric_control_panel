@@ -42,3 +42,13 @@ outputs/
 .pytest_cache/
 .coverage*
 htmlcov/
+
+# Frontend (Vite/React)
+bcp_frontend_v1/node_modules/
+bcp_frontend_v1/dist/
+bcp_frontend_v1/.env
+bcp_frontend_v1/.env.*
+bcp_frontend_v1/.vite/
+
+# Local server logs
+.uvicorn.log

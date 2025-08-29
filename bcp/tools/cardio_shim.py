@@ -8,7 +8,11 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 
-from ..core.chaos_advanced import lyap_rosenstein_ci, gp_dimension_scaling_ci, rqa_sweep
+from ..core.chaos_advanced import (
+    lyap_rosenstein_ci_ex,
+    gp_dimension_scaling_ci,
+    rqa_sweep,
+)
 from ..core.quality import stationarity_checks, quality_gate, classify_cardiac
 from ..core.guardrails import guardrail_action_cardiac
 
@@ -66,8 +70,8 @@ def run_shim(
             st = stationarity_checks(x, fs)
 
             # Metrics with CI
-            lam1, (l_lo, l_hi), _, _ = lyap_rosenstein_ci(x, m, tau, fs=fs, n_boot=100)
-            D2, (d_lo, d_hi), _, _, _ = gp_dimension_scaling_ci(x, m, tau, n_boot=100)
+            lam1, (l_lo, l_hi), _, _, seg_len = lyap_rosenstein_ci_ex(x, m, tau, fs=fs, n_boot=100)
+            D2, (d_lo, d_hi), _, _, band = gp_dimension_scaling_ci(x, m, tau, n_boot=100)
 
             # RQA sweep (robust summary)
             Y = _takens_embedding(x, min(3, m), tau)
@@ -75,6 +79,35 @@ def run_shim(
 
             # Quality gate
             q_ok, q_msgs = quality_gate((l_lo, l_hi), (d_lo, d_hi), st.ok)
+
+            # Explicit quality tags
+            l_good = np.isfinite(l_lo) and np.isfinite(l_hi)
+            d_good = np.isfinite(d_lo) and np.isfinite(d_hi)
+            d_len = 0
+            try:
+                d_len = int(band[1] - band[0])
+            except Exception:
+                d_len = 0
+            st_flags: list[str] = []
+            if st.mean_drift_ratio > 0.1:
+                st_flags.append("high_mean_drift")
+            if not (0.5 <= st.var_ratio_last_first <= 2.0):
+                st_flags.append("variance_flip")
+            if np.isfinite(st.acf1_abs) and st.acf1_abs > 0.95:
+                st_flags.append("high_diff_acf1")
+            qtags = {
+                "stationarity_pass": bool(st.ok),
+                "stationarity_flags": st_flags,
+                "lambda1_ci_overlaps_zero": bool(l_good and (l_lo <= 0.0 <= l_hi)),
+                "lambda1_ci_width": float((l_hi - l_lo) if l_good else np.nan),
+                "lambda1_seg_len": int(seg_len),
+                "d2_ci_width": float((d_hi - d_lo) if d_good else np.nan),
+                "d2_ci_wide": bool(((d_hi - d_lo) > 1.0) if d_good else True),
+                "d2_scaling_region_len": int(d_len),
+                "d2_indeterminate": bool((not d_good) or (d_len < 5)),
+                "rqa_det_rel_std": float(rqa["determinism"]["rel_std"]),
+                "rqa_unstable_thresholding": bool(rqa["determinism"]["rel_std"] > 0.5),
+            }
 
             # Classify state
             state, conf, reasons = classify_cardiac(lam1, D2)
@@ -116,6 +149,7 @@ def run_shim(
                 },
                 "quality_ok": bool(q_ok),
                 "quality_notes": q_msgs,
+                "quality_tags": qtags,
             }
             f.write(json.dumps(ev_metrics) + "\n")
             f.write(
@@ -176,4 +210,3 @@ def main() -> None:  # pragma: no cover - CLI
 
 if __name__ == "__main__":
     main()
-

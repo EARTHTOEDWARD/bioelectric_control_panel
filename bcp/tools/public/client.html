@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>BCP — Minimal Live Panel</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 20px; }
+    .row { display: flex; gap: 16px; flex-wrap: wrap; }
+    .card { border: 1px solid #ddd; border-radius: 10px; padding: 12px 16px; min-width: 260px; }
+    .title { font-weight: 600; margin-bottom: 6px; }
+    .metric { font-size: 24px; font-weight: 700; margin: 4px 0; }
+    .sub { font-size: 12px; opacity: 0.7; }
+    .badge { display: inline-block; padding: 4px 8px; border-radius: 999px; font-weight: 600; }
+    .ok { background: #e8f5e9; color: #1b5e20; }
+    .warn { background: #fff8e1; color: #7c5300; }
+    .err { background: #ffebee; color: #b71c1c; }
+    canvas { width: 100%; height: 64px; border-top: 1px dashed #eee; margin-top: 8px; }
+    code { background: #f6f8fa; padding: 2px 6px; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <h1>Bioelectric Control Panel — Live (Minimal)</h1>
+  <p>Connects to <code>ws://HOST:8765/ws</code> and shows latest metrics/state/guardrail. Use with <code>bcp-ws-bridge --static</code>.</p>
+
+  <div class="row">
+    <div class="card" style="flex:1">
+      <div class="title">State</div>
+      <div id="stateBadge" class="badge ok">waiting…</div>
+      <div class="sub" id="stateInfo"></div>
+    </div>
+    <div class="card" style="flex:2">
+      <div class="title">λ₁ (largest Lyapunov)</div>
+      <div class="metric"><span id="lamVal">–</span> <span class="sub">CI: <span id="lamCI">–</span></span></div>
+      <canvas id="lamChart"></canvas>
+    </div>
+    <div class="card" style="flex:2">
+      <div class="title">D₂ (correlation dimension)</div>
+      <div class="metric"><span id="d2Val">–</span> <span class="sub">CI: <span id="d2CI">–</span></span></div>
+      <canvas id="d2Chart"></canvas>
+    </div>
+    <div class="card" style="flex:1">
+      <div class="title">Quality & Guardrail</div>
+      <div id="qualBadge" class="badge warn">–</div>
+      <div class="sub" id="guardMsg">–</div>
+    </div>
+  </div>
+
+  <script>
+    const wsUrl = (() => {
+      const host = location.hostname || '127.0.0.1';
+      const port = (location.port && !isNaN(parseInt(location.port))) ? location.port : '8765';
+      return `ws://${host}:${port}/ws`;
+    })();
+
+    const lamVals = [];
+    const d2Vals = [];
+    const maxPts = 120;
+
+    function pushAndTrim(arr, v) {
+      arr.push(v);
+      if (arr.length > maxPts) arr.shift();
+    }
+
+    function drawSpark(canvas, arr) {
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width, h = canvas.height;
+      ctx.clearRect(0,0,w,h);
+      if (!arr.length) return;
+      const min = Math.min(...arr), max = Math.max(...arr);
+      ctx.beginPath();
+      for (let i=0;i<arr.length;i++){
+        const x = i/(arr.length-1) * (w-2) + 1;
+        const y = h-1 - (arr[i]-min)/(max-min || 1) * (h-2);
+        if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      }
+      ctx.stroke();
+    }
+
+    function setBadge(el, text, level) {
+      el.className = "badge " + (level||"ok");
+      el.textContent = text;
+    }
+
+    let lastState = '—', lastGuard = '—';
+
+    function onEvent(obj){
+      if (obj.type === 'metrics_update'){
+        const m = obj.metrics || {};
+        const l = Number.isFinite(m.lambda1) ? m.lambda1 : null;
+        const d = Number.isFinite(m.D2) ? m.D2 : null;
+        if (l!==null){
+          document.getElementById('lamVal').textContent = l.toFixed(3);
+          const ci = m.lambda1_ci || [NaN,NaN];
+          document.getElementById('lamCI').textContent = `[${(ci[0]||NaN).toFixed(3)}, ${(ci[1]||NaN).toFixed(3)}]`;
+          pushAndTrim(lamVals, l);
+          drawSpark(document.getElementById('lamChart'), lamVals);
+        }
+        if (d!==null){
+          document.getElementById('d2Val').textContent = d.toFixed(2);
+          const ci = m.D2_ci || [NaN,NaN];
+          document.getElementById('d2CI').textContent = `[${(ci[0]||NaN).toFixed(2)}, ${(ci[1]||NaN).toFixed(2)}]`;
+          pushAndTrim(d2Vals, d);
+          drawSpark(document.getElementById('d2Chart'), d2Vals);
+        }
+        setBadge(document.getElementById('qualBadge'), obj.quality_ok ? "quality_ok" : "quality_hold", obj.quality_ok ? "ok" : "err");
+      }
+      if (obj.type === 'state_update'){
+        lastState = obj.state || '—';
+        const level = (lastState === 'vf') ? 'err' : (lastState.indexOf('border')>=0 ? 'warn' : 'ok');
+        setBadge(document.getElementById('stateBadge'), `State: ${lastState}`, level);
+        document.getElementById('stateInfo').textContent = `confidence: ${(obj.confidence||0).toFixed(2)}`;
+      }
+      if (obj.type === 'guardrail'){
+        lastGuard = (obj.allowed===false) ? (obj.messages||[]).join(' ') || 'blocked' : 'allowed';
+        document.getElementById('guardMsg').textContent = lastGuard;
+      }
+    }
+
+    function connect(){
+      const ws = new WebSocket(wsUrl);
+      ws.onopen = () => console.log('WS open', wsUrl);
+      ws.onmessage = (evt) => {
+        try{
+          const obj = JSON.parse(evt.data);
+          onEvent(obj);
+        }catch(e){ /* ignore bad lines */ }
+      };
+      ws.onclose = () => {
+        console.warn('WS closed, retrying in 1.5s');
+        setTimeout(connect, 1500);
+      };
+      ws.onerror = () => ws.close();
+    }
+    connect();
+  </script>
+</body>
+</html>
+

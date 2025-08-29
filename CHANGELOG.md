@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## [Unreleased]
+### Fixed
+- chaos: compute_window_metrics used `xc` before assignment when auto-selecting `tau` for the `generic` modality; now center/scales prior to `tau` selection.
+- chaos: tuned `lyap_rosenstein` fitting window (`max_t` 0.2) to stabilize λ1 on periodic signals.
+- attractor: delay embedding now guards short signals and corrects indexing to ensure at least one vector when possible.
+
 ## [0.1.1] - 2025-08-29
 ### Added
 - Advanced chaos metrics with confidence intervals:

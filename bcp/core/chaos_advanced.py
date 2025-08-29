@@ -87,6 +87,73 @@ def lyap_rosenstein_ci(
     return slope, (lo, hi), ks / fs, mean_log
 
 
+def lyap_rosenstein_ci_ex(
+    x: np.ndarray,
+    m: int,
+    tau: int,
+    fs: float,
+    theiler: int | None = None,
+    max_t: float = 0.4,
+    max_points: int = 4000,
+    n_boot: int = 100,
+) -> Tuple[float, Tuple[float, float], np.ndarray, np.ndarray, int]:
+    """As lyap_rosenstein_ci, but also returns the fitted segment length.
+
+    Returns: (slope, (lo, hi), time_axis, mean_log_curve, seg_len)
+    """
+    if theiler is None:
+        theiler = max(1, int(1.5 * tau))
+    Y = _takens_embedding(x, m, tau)
+    N = Y.shape[0]
+    idx = np.arange(N)
+    if N > max_points:
+        rng = np.random.default_rng(0)
+        idx = np.sort(rng.choice(N, size=max_points, replace=False))
+    YS = Y[idx]
+    D = np.linalg.norm(YS[:, None, :] - YS[None, :, :], axis=2)
+    for i in range(YS.shape[0]):
+        lo = max(0, i - theiler)
+        hi = min(YS.shape[0], i + theiler + 1)
+        D[i, lo:hi] = np.inf
+        D[i, i] = np.inf
+    nn = np.argmin(D, axis=1)
+    max_k = min(int(max_t * fs), YS.shape[0] - 1)
+    ks = np.arange(max_k)
+    valid_counts = np.zeros(max_k)
+    mean_log = np.zeros(max_k)
+    for k in range(1, max_k):
+        vals: List[float] = []
+        for i in range(YS.shape[0] - k):
+            j = nn[i]
+            if j + k >= YS.shape[0] or i + k >= YS.shape[0]:
+                continue
+            d0 = np.linalg.norm(YS[i] - YS[j])
+            d1 = np.linalg.norm(YS[i + k] - YS[j + k])
+            if d0 > 0 and d1 > 0:
+                vals.append(float(np.log(d1 / d0)))
+        if len(vals) >= 5:
+            mean_log[k] = float(np.mean(vals))
+            valid_counts[k] = len(vals)
+        else:
+            mean_log[k] = np.nan
+    mask = np.isfinite(mean_log) & (valid_counts > 10)
+    if np.sum(mask) < 5:
+        return float("nan"), (float("nan"), float("nan")), ks / fs, mean_log, 0
+    sel = np.where(mask)[0]
+    end = max(3, int(0.3 * sel.size))
+    seg = sel[:end]
+    slope = float(np.polyfit(ks[seg] / fs, mean_log[seg], 1)[0])
+    lo, hi = float("nan"), float("nan")
+    if seg.size >= 5 and n_boot > 2:
+        rng = np.random.default_rng(0)
+        boots = []
+        for _ in range(n_boot):
+            bsel = rng.choice(seg, size=seg.size, replace=True)
+            boots.append(float(np.polyfit(ks[bsel] / fs, mean_log[bsel], 1)[0]))
+        lo, hi = float(np.percentile(boots, 2.5)), float(np.percentile(boots, 97.5))
+    return slope, (lo, hi), ks / fs, mean_log, int(seg.size)
+
+
 def gp_dimension_scaling_ci(
     x: np.ndarray,
     m: int,
@@ -222,4 +289,3 @@ def rqa_sweep(
         "Lmax": _stats(lmaxs),
         "trapping_time": _stats(traps),
     }
-

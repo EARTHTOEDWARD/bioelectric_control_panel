@@ -35,7 +35,7 @@ def _takens_embedding(x: np.ndarray, m: int, tau: int) -> np.ndarray:
 
 
 def lyap_rosenstein(x: np.ndarray, m: int, tau: int, fs: float, theiler: int | None = None,
-                    max_t: float = 0.4, max_points: int = 4000) -> float:
+                    max_t: float = 0.2, max_points: int = 4000) -> float:
     """
     Largest Lyapunov exponent via Rosenstein et al.
     Returns slope (1/seconds). If insufficient data, returns NaN.
@@ -246,6 +246,10 @@ def compute_window_metrics(signal: np.ndarray, fs: float, modality: str = "gener
     x = np.asarray(signal, dtype=float)
     if x.ndim != 1 or x.size < 100:
         raise ValueError("signal must be 1D and sufficiently long")
+    # center/scale lightly for robustness (do this before selecting tau for 'generic')
+    xc = x - np.mean(x)
+    s = np.std(xc) + 1e-12
+    xc = xc / s
     cfg = _defaults_for_modality(modality, fs)
     m = override_m or cfg.m
     if override_tau_samples is not None:
@@ -256,10 +260,6 @@ def compute_window_metrics(signal: np.ndarray, fs: float, modality: str = "gener
             tau = _autocorr_first_zero(xc)
         else:
             tau = cfg.tau
-    # center/scale lightly for robustness
-    xc = x - np.mean(x)
-    s = np.std(xc) + 1e-12
-    xc = xc / s
     lam1 = lyap_rosenstein(xc, m=m, tau=tau, fs=fs)
     D2 = correlation_dimension_gp(xc, m=m, tau=tau)
     mse_auc_val = mse_auc(xc, max_scale=20, m=2)

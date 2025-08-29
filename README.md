@@ -80,6 +80,49 @@ r = requests.post("http://127.0.0.1:8000/v1/chaos/window", json=payload)
 print(r.json())
 ```
 
+### CLI — Streaming windows + Attractor snapshot
+
+Compute metrics over rolling windows from a 1D signal (CSV/JSON/NPY) or use built‑in demos. Writes a CSV and a quick Attractor View PNG.
+
+```bash
+# Install viz extra for plotting once in your venv
+pip install -e ".[viz]"
+
+# Demo (sine, Lorenz x(t), 1/f noise)
+bcp-stream --demo --fs 1000 --window 5 --step 1 \
+  --modality cardiac \
+  --out_csv outputs/stream_metrics.csv \
+  --out_png outputs/attractor.png
+
+# From a CSV (first column), sample rate 500 Hz
+bcp-stream --input path/to/signal.csv --fs 500 --window 10 --step 2 \
+  --modality eeg --out_csv outputs/eeg_metrics.csv --out_png outputs/eeg_attractor.png
+```
+
+CSV rows contain `t0` (window start seconds) plus the chaos metrics fields (`lambda1`, `predictability_horizon_s`, `D2`, `mse_auc_1_20`, `rqa_*`, `quality`, `m`, `tau_samples`).
+
+### Shim — Cardiac NDJSON with Confidence Intervals & Guardrails (Sprint 1.1)
+
+Simulate a cardiac stream transitioning NSR → VF. Emits NDJSON events (metrics_update, state_update, guardrail), plus a trend CSV for quick plots.
+
+```bash
+# Run the shim (outputs to ./outputs by default)
+bcp-shim-cardiac --fs 800 --window 5 --windows 18 --out_dir outputs
+
+# Inspect the first few lines
+head -n 6 outputs/events.ndjson
+```
+
+Each `metrics_update` includes:
+- embedding: `m`, `tau`
+- stationarity: mean drift ratio, variance ratio, `acf1_abs`, and notes
+- metrics with CI: `lambda1`, `lambda1_ci`, `D2`, `D2_ci`, `rqa` stability
+- `quality_ok` + notes; actions should be gated when false
+
+Guardrail policy (cardiac):
+- Block actions when analysis quality is insufficient (stationarity failed or `λ1` CI overlaps 0).
+- Allow shock only when `λ1≥0.3` and `D2≥3.0`; clamp shock energy and pacing params to device limits.
+
 ## SDK
 
 ```python

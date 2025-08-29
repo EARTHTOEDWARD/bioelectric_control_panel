@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv*
+env/
+venv/
+build/
+dist/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+
+# Env & secrets
+.env
+.env.*
+
+# Data
+data/
+datasets/
+tmp/
+*.nwb
+*.zarr
+*.npz
+*.tif
+*.tiff
+*.csv
+*.mat
+*.jsonl
+
+# Local artifacts
+outputs/
+.DS_Store
+**/.DS_Store
+*.ndjson
+
+# Test & coverage
+.pytest_cache/
+.coverage*
+htmlcov/

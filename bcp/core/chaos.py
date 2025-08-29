@@ -232,9 +232,9 @@ def _defaults_for_modality(modality: str, fs: float) -> ChaosConfig:
         tau = max(1, int(0.015 * fs))  # ~15 ms
         m = 5
     else:
-        # Heuristic: ACF zero + moderate m
-        tau = _autocorr_first_zero(np.zeros(int(fs)) + 1.0)  # fallback small value
-        tau = max(tau, 8)
+        # Generic: let compute_window_metrics pick tau from the actual signal; keep m moderate
+        # Set a conservative placeholder tau; will be overridden for 'generic'
+        tau = max(8, int(0.01 * fs))
         m = 5
     return ChaosConfig(m=m, tau=tau)
 
@@ -248,7 +248,14 @@ def compute_window_metrics(signal: np.ndarray, fs: float, modality: str = "gener
         raise ValueError("signal must be 1D and sufficiently long")
     cfg = _defaults_for_modality(modality, fs)
     m = override_m or cfg.m
-    tau = override_tau_samples or cfg.tau
+    if override_tau_samples is not None:
+        tau = override_tau_samples
+    else:
+        if (modality or "").lower() == "generic":
+            # Choose tau from signal autocorr zero-crossing for generic modality
+            tau = _autocorr_first_zero(xc)
+        else:
+            tau = cfg.tau
     # center/scale lightly for robustness
     xc = x - np.mean(x)
     s = np.std(xc) + 1e-12
@@ -276,4 +283,3 @@ def compute_window_metrics(signal: np.ndarray, fs: float, modality: str = "gener
         "m": int(m),
         "tau_samples": int(tau),
     }
-

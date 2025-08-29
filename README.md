@@ -9,6 +9,38 @@ A standalone service and SDK for bioelectric data ingestion, validation, and ana
 - Run API: `uvicorn bcp.api.main:app --reload`
 - Health check: `GET http://127.0.0.1:8000/health`
 
+### UI (Frontend) — Local Dev
+
+- `cd bcp_frontend_v1 && npm install && npm run dev`
+- Open `http://127.0.0.1:5173` and set API/WS endpoints in Settings, or create `bcp_frontend_v1/.env` with:
+  - `VITE_API_URL=http://127.0.0.1:8000`
+  - `VITE_WS_URL=ws://127.0.0.1:8765/ws`
+
+### UI Served by FastAPI
+
+- Build the frontend: `cd bcp_frontend_v1 && VITE_BASE=/app/ npm run build`
+- Start the API; the app auto-mounts UI from `bcp_frontend_v1/dist` (or set `BCP_UI_STATIC_DIR=/path/to/dist`).
+- Open `http://127.0.0.1:8000/app/`
+
+### One Container (API + Built UI)
+
+- Build image: `docker build -t bcp .`
+- Run: `docker run --rm -p 8000:8000 bcp`
+- Open `http://127.0.0.1:8000/app/`
+- Note: The WS bridge runs separately (see below). Point the UI to it in Settings.
+
+### Docker Compose (API + WS bridge + demo events)
+
+- Build and run everything: `docker compose up --build`
+- Opens:
+  - UI: `http://127.0.0.1:8000/app/`
+  - WS bridge: `ws://127.0.0.1:8765/ws`
+- The compose stack does:
+  - Initializes `outputs/events.ndjson`
+  - Generates demo events with `bcp-shim-cardiac`
+  - Broadcasts events via WS bridge in tail mode
+  - Serves the API and the built UI together
+
 ## Environment
 
 Configure via env vars or `.env` in repo root (see `.env.example`). Key vars:
@@ -122,6 +154,49 @@ Each `metrics_update` includes:
 Guardrail policy (cardiac):
 - Block actions when analysis quality is insufficient (stationarity failed or `λ1` CI overlaps 0).
 - Allow shock only when `λ1≥0.3` and `D2≥3.0`; clamp shock energy and pacing params to device limits.
+
+### Shim — Vagus ENG with CI, Guardrails, Entrainment Tags, and Viewer (Sprint 1.3)
+
+Simulate vagus ENG windows with respiratory phase and a mid‑run stimulation episode. Emits NDJSON events enriched with entrainment/quality tags and simple vagus‑specific guardrails. Includes a dedicated viewer.
+
+```bash
+# Generate a demo session (events + trend CSV)
+bcp-shim-vagus --fs 1000 --window 2.5 --windows 12 --out_dir outputs
+
+# Broadcast over WebSocket with static demo clients
+pip install -e ".[ws]"
+bcp-ws-bridge --events outputs/vagus_events.ndjson --mode replay --static
+# Open: http://127.0.0.1:8766/client_vagus.html
+```
+
+Event schema additions (vagus):
+- `quality_tags.resp_phase` and `quality_tags.stim_on` to surface context
+- `entrainment_tags` with `determinism_delta`, `entrainment_observed`, `lambda1_drop`, `d2_drop`
+- Guardrail event includes `proposed`, `allowed`, `messages`, and optional `suggestion` with params
+
+Guardrails (vagus):
+- Only propose `stim_on` from `vagal_chaotic_rest` and when analysis `quality_ok`
+- Only propose `stim_off` from `vagal_periodic_entrained`
+- Duty‑cycle limiter (demo: 4 windows); always block on poor analysis quality
+
+### Shim — Vagus from NWB/HDF5 (Sprint 1.4)
+
+Read a real NWB/HDF5 ElectricalSeries via `h5py` (no `pynwb` required) and emit the same NDJSON schema for the Vagus viewer and guardrails.
+
+```bash
+# Emit NDJSON from NWB
+bcp-shim-vagus-nwb --nwb /path/to/session.nwb --channel 0 \
+  --window 2.0 --step 2.0 --out_dir outputs
+
+# Stream to the UI
+pip install -e ".[ws]"
+bcp-ws-bridge --events outputs/vagus_events_from_nwb.ndjson --mode replay --static
+# Open: http://127.0.0.1:8766/client_vagus.html
+```
+
+Discovery: finds an ElectricalSeries under `/acquisition/**/data`, uses `rate` attribute or infers fs from `timestamps`. Supports shapes `(T,)`, `(T,C)`, `(C,T)`.
+Preprocessing: moving-average high‑pass + first difference + z‑score.
+Metrics/tags/guardrails: same as Sprint 1.3 Vagus shim.
 
 ## SDK
 

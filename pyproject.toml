@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bioelectric-control-panel"
-version = "0.1.1"
+version = "0.1.2"
 description = "Bioelectric data ingestion, validation, and analysis service (FastAPI) and SDK"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -50,6 +50,8 @@ ws = [
 bcp-api = "bcp.cli:run_api"
 bcp-stream = "bcp.tools.stream:main"
 bcp-shim-cardiac = "bcp.tools.cardio_shim:main"
+bcp-shim-vagus = "bcp.tools.vagus_shim:main"
+bcp-shim-vagus-nwb = "bcp.tools.vagus_nwb_shim:main"
 bcp-ws-bridge = "bcp.tools.ws_bridge:main"
 
 [tool.black]

@@ -21,6 +21,11 @@ dist/
 
 # Data
 data/
+!data/outgoing/
+data/outgoing/*
+!data/outgoing/README.md
+!data/outgoing/long.csv
+!data/outgoing/manifest.json
 datasets/
 tmp/
 *.nwb

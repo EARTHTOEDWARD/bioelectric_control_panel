@@ -1,0 +1,34 @@
+{
+  "spectral": {
+    "fs_default_Hz": 0.2,
+    "beta_band_Hz": [0.002, 0.02],
+    "coh_band_Hz": [0.002, 0.02],
+    "welch": {
+      "segment_len_s": 600,
+      "overlap": 0.5,
+      "detrend": "linear"
+    }
+  },
+  "step": {
+    "pre_win_s": 300,
+    "pre_gap_s": 60,
+    "post_start_s": 300,
+    "post_win_s": 300,
+    "tau63_search_s": 1200
+  },
+  "windowed": {
+    "win_len_s": 600,
+    "overlap": 0.5
+  },
+  "rqa": {
+    "embed_dim": 2,
+    "delay": 1,
+    "threshold_quantile": 0.1,
+    "diag_min": 2,
+    "vert_min": 2
+  },
+  "bootstrap": {
+    "iterations": 10000,
+    "method": "percentile"  
+  }
+}
